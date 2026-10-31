@@ -1,4 +1,4 @@
-// 部署時只改這個網址，勿填入 API 金鑰或管理密碼。
+// 雷雕系統後端連線設定
 window.LASER_CONFIG = {
   apiBase:"https://photo-laser-backend.onrender.com",
   title: 'AI 人像雷雕體驗',
