@@ -9,8 +9,8 @@ function stopCamera(){clearTimeout(captureTimer);captureTimer=null;captureOverla
 async function api(path,body){const r=await fetch(API+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok||!d.success)throw Error(d.error||'連線失敗');return d;}
 function button(text,fn,primary=false){const b=document.createElement('button');b.textContent=text;b.className=primary?'primary':'';b.onclick=fn;return b;}
 function actions(...buttons){const e=document.createElement('div');e.className='actions';e.append(...buttons);screen.append(e);}
-let waitClock=null,waitVersion=0;
-function heading(text){clearInterval(waitClock);waitClock=null;waitVersion++;screen.replaceChildren();const h=document.createElement('h2');h.textContent=text;screen.append(h);msg('');}
+let waitVersion=0;
+function heading(text){waitVersion++;screen.replaceChildren();const h=document.createElement('h2');h.textContent=text;screen.append(h);msg('');}
 function home(){clearTimeout(poll);clearInterval(returnTimer);stopCamera();taskId=null;photo=null;busy=false;localStorage.removeItem('laser-active-task');requestId=crypto.randomUUID();heading('一張照片，一份專屬線稿');screen.insertAdjacentHTML('beforeend','<div class="examples"><figure><img src="https://img.shoplineapp.com/media/image_clips/6a1ef28ef1bda7070f35eecc/original.png?1780413070=&owner_id=66221c5c384dbb002ec45c18" alt="AI角色示意"><figcaption>AI 專屬角色</figcaption></figure><span>→</span><figure><img src="https://img.shoplineapp.com/media/image_clips/6a1ef3c33ce472c30e346dac/original.png?1780413379=&owner_id=66221c5c384dbb002ec45c18" alt="禮品示意"><figcaption>專屬客製禮品</figcaption></figure></div><p>本攤位生成黑白雷雕線稿，圖片為示意。</p>');actions(button('開始體驗',chooseEntry,true));}
 async function camera(){entryMode='camera';heading('看向鏡頭，準備好就拍照');photoGuidance();const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;screen.append(video);try{stopCamera();stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:1280},facingMode:'user'},audio:false});video.srcObject=stream;await video.play();actions(button('拍照',(event)=>startCaptureCountdown(video,event.currentTarget),true),button('返回首頁',home));}catch(e){msg('無法開啟相機。請確認網址為 HTTPS，並允許相機權限。',true);actions(button('重新開啟',camera),button('返回首頁',home));}}
 function capture(video){if(!video.videoWidth)return;const c=document.createElement('canvas');c.width=c.height=1024;const n=Math.min(video.videoWidth,video.videoHeight);const ctx=c.getContext('2d');ctx.translate(c.width,0);ctx.scale(-1,1);ctx.drawImage(video,(video.videoWidth-n)/2,(video.videoHeight-n)/2,n,n,0,0,1024,1024);photo=c.toDataURL('image/jpeg',.82);for(let q=.72;photo.length>500000&&q>=.32;q-=.1)photo=c.toDataURL('image/jpeg',q);if(photo.length>500000){msg('照片細節過多，請改用簡單背景再拍照。',true);return;}stopCamera();previewPhoto();}
@@ -21,11 +21,7 @@ function waiting(){
  screen.insertAdjacentHTML('beforeend','<div class="bear" aria-label="黑熊陪你等待"></div>');
  const n=document.createElement('div');n.className='number';n.textContent='#'+taskId;screen.append(n);
  const stage=document.createElement('p');stage.id='generation-stage';stage.textContent='照片已送出，正在查詢進度';screen.insertBefore(stage,n);
- const bar=document.createElement('progress');bar.id='generation-progress';bar.max=1;bar.setAttribute('aria-label','線稿處理中');bar.style.cssText='display:block;width:100%;height:20px;accent-color:#133139';
- const elapsed=document.createElement('p');const began=Date.now();
- const updateTime=()=>elapsed.textContent='本次畫面已等待 '+Math.floor((Date.now()-began)/1000)+' 秒';
- updateTime();waitClock=setInterval(updateTime,1000);
- screen.append(bar,elapsed);
+ const bar=document.createElement('div');bar.id='generation-progress';bar.className='generation-progress';bar.setAttribute('role','progressbar');bar.setAttribute('aria-label','線稿處理中');screen.append(bar);
  actions(button('返回首頁',()=>{
    if(confirm('訂單 #'+taskId+' 尚未確認製作。返回首頁後，生圖仍會繼續，請先記下號碼並告知工作人員。確定返回？'))home();
  }));
@@ -43,10 +39,10 @@ async function pollTask(id=taskId,version=waitVersion){
    const stage=document.getElementById('generation-stage');
    const bar=document.getElementById('generation-progress');
    if(d.status==='failed'){
-     stage.textContent='生成未完成，請工作人員協助重試';bar.value=0;
+     stage.textContent='生成未完成，請工作人員協助重試';bar.classList.add('is-failed');bar.setAttribute('aria-label','生成未完成');
      msg('請告知工作人員訂單號碼 #'+id+'，後台可重試。',true);
    }else{
-     bar.removeAttribute('value');
+     bar.classList.remove('is-failed');bar.setAttribute('aria-label','線稿處理中');
      stage.textContent=d.status==='queued'||d.status==='pending'?'照片已送出 → 排隊等待中':'照片已送出 → AI 正在生成線稿';
      msg('');
    }
