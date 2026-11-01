@@ -4,8 +4,11 @@ body{background:#133139;color:#fff}header p,.eyebrow{color:rgba(255,255,255,.8)}
 
 .bear{width:min(80vw,300px);height:min(80vw,300px);margin:20px auto;background-image:url('assets/bear-boba-sheet.png');background-size:200% 200%;animation:bear-frames 2s steps(1,end) infinite}@keyframes bear-frames{0%,100%{background-position:0 0}25%{background-position:100% 0}50%{background-position:0 100%}75%{background-position:100% 100%}}.language{text-align:right;margin-bottom:20px}.language button{padding:6px 14px;font-size:14px}.language button[aria-pressed=true]{background:#f5da69}
 
-/* High-contrast indeterminate generation indicator. */
-.generation-progress{display:block;position:relative;overflow:hidden;width:100%;height:22px;margin:20px 0;border-radius:999px;background:#133139;border:2px solid #133139}
-.generation-progress::before{content:"";position:absolute;inset:0 auto 0 0;width:38%;border-radius:999px;background:#f5da69;animation:laser-progress-slide 1.35s ease-in-out infinite alternate}
-@keyframes laser-progress-slide{from{left:0}to{left:62%}}
-.generation-progress.is-failed::before{animation:none;left:0;background:#d77352}
+
+/* Estimated fill progress; 100% is reserved for a saved result. */
+.generation-percent{display:flex;justify-content:flex-end;align-items:baseline;gap:12px;margin:20px 0 8px;color:#133139}
+.generation-percent span{font-size:14px}
+.generation-percent strong{font-size:clamp(40px,7vw,64px);font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.generation-progress{position:relative;overflow:hidden;width:100%;height:22px;border-radius:999px;background:#edf1ed;margin-bottom:24px}
+.generation-progress::before{content:"";position:absolute;inset:0 auto 0 0;width:var(--progress,5%);background:#dcbc39;border-radius:999px;transition:width 1s linear}
+.generation-progress.is-failed::before{background:#d77352}
