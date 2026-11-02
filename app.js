@@ -9,8 +9,9 @@ function stopCamera(){clearTimeout(captureTimer);captureTimer=null;captureOverla
 async function api(path,body){const r=await fetch(API+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok||!d.success)throw Error(d.error||'連線失敗');return d;}
 function button(text,fn,primary=false){const b=document.createElement('button');b.textContent=text;b.className=primary?'primary':'';b.onclick=fn;return b;}
 function actions(...buttons){const e=document.createElement('div');e.className='actions';e.append(...buttons);screen.append(e);}
+let loadingSlideTimer=null;
 let waitVersion=0,progressTimer=null,progressValue=5,progressPhase='queued';
-function heading(text){clearInterval(progressTimer);progressTimer=null;waitVersion++;screen.replaceChildren();const h=document.createElement('h2');h.textContent=text;screen.append(h);msg('');}
+function heading(text){clearInterval(loadingSlideTimer);loadingSlideTimer=null;clearInterval(progressTimer);progressTimer=null;waitVersion++;screen.replaceChildren();const h=document.createElement('h2');h.textContent=text;screen.append(h);msg('');}
 function home(){clearTimeout(poll);clearInterval(returnTimer);stopCamera();taskId=null;photo=null;busy=false;localStorage.removeItem('laser-active-task');requestId=crypto.randomUUID();heading('一張照片，一份專屬線稿');screen.insertAdjacentHTML('beforeend','<div class="examples"><figure><img src="https://img.shoplineapp.com/media/image_clips/6a1ef28ef1bda7070f35eecc/original.png?1780413070=&owner_id=66221c5c384dbb002ec45c18" alt="AI角色示意"><figcaption>AI 專屬角色</figcaption></figure><span>→</span><figure><img src="https://img.shoplineapp.com/media/image_clips/6a1ef3c33ce472c30e346dac/original.png?1780413379=&owner_id=66221c5c384dbb002ec45c18" alt="禮品示意"><figcaption>專屬客製禮品</figcaption></figure></div><p>本攤位生成黑白雷雕線稿，圖片為示意。</p>');actions(button('開始體驗',chooseEntry,true));}
 async function camera(){entryMode='camera';heading('看向鏡頭，準備好就拍照');photoGuidance();const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;screen.append(video);try{stopCamera();stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:1280},facingMode:'user'},audio:false});video.srcObject=stream;await video.play();actions(button('拍照',(event)=>startCaptureCountdown(video,event.currentTarget),true),button('返回首頁',home));}catch(e){msg('無法開啟相機。請確認網址為 HTTPS，並允許相機權限。',true);actions(button('重新開啟',camera),button('返回首頁',home));}}
 function capture(video){if(!video.videoWidth)return;const c=document.createElement('canvas');c.width=c.height=1024;const n=Math.min(video.videoWidth,video.videoHeight);const ctx=c.getContext('2d');ctx.translate(c.width,0);ctx.scale(-1,1);ctx.drawImage(video,(video.videoWidth-n)/2,(video.videoHeight-n)/2,n,n,0,0,1024,1024);photo=c.toDataURL('image/jpeg',.82);for(let q=.72;photo.length>500000&&q>=.32;q-=.1)photo=c.toDataURL('image/jpeg',q);if(photo.length>500000){msg('照片細節過多，請改用簡單背景再拍照。',true);return;}stopCamera();previewPhoto();}
@@ -18,7 +19,7 @@ function capture(video){if(!video.videoWidth)return;const c=document.createEleme
 async function submit(){if(busy)return;busy=true;screen.querySelectorAll('button').forEach(b=>b.disabled=true);msg('照片傳送中，請稍候…');try{const d=await api('/api/upload',{image:photo,requestId,entryMode});taskId=d.taskId;localStorage.setItem('laser-active-task',taskId);photo=null;waiting();}catch(e){msg('送出未確認，請確認網路後按「開始生成」重試。'+e.message,true);screen.querySelectorAll('button').forEach(b=>b.disabled=false);}finally{busy=false;}}
 function waiting(){
  heading('專屬線稿製作中');
- screen.insertAdjacentHTML('beforeend','<div class="bear" aria-label="黑熊陪你等待"></div>');
+ showLoadingSlides();
  const n=document.createElement('div');n.className='number';n.textContent='#'+taskId;screen.append(n);
  const stage=document.createElement('p');stage.id='generation-stage';stage.textContent='照片已送出，正在查詢進度';screen.insertBefore(stage,n);
  const bar=document.createElement('div');bar.id='generation-progress';bar.className='generation-progress';bar.setAttribute('role','progressbar');bar.setAttribute('aria-label','預估生成進度');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');const label=document.createElement('div');label.className='generation-percent';label.innerHTML='<span>預估進度</span><strong id="generation-percent">5%</strong>';screen.append(label,bar);progressValue=5;progressPhase='queued';paintProgress(5);progressTimer=setInterval(()=>{if(progressPhase==='failed'||progressPhase==='offline')return;const cap=progressPhase==='queued'?15:95;paintProgress(Math.min(cap,progressValue+Math.max(.1,(cap-progressValue)*.035)));},1000);
@@ -86,3 +87,18 @@ function startCaptureCountdown(video,trigger){
 function photoGuidance(){const p=document.createElement('p');p.textContent='請拍攝或上傳正面、臉部清晰的單人照片，避免多人合照，以免無法正確生成線稿。';p.style.color='#133139';screen.append(p);}
 
 function paintProgress(value){progressValue=Math.max(progressValue,value);const bar=document.getElementById('generation-progress'),label=document.getElementById('generation-percent');if(!bar||!label)return;const rounded=Math.floor(progressValue);bar.style.setProperty('--progress',progressValue+'%');bar.setAttribute('aria-valuenow',String(rounded));label.textContent=rounded+'%';}
+
+function showLoadingSlides(){
+ const version=waitVersion;
+ const frame=document.createElement('div');frame.className='loading-slides';screen.append(frame);
+ const pictures=[1,2,3].map(n=>{const img=new Image();img.src='assets/innoserve/loading-'+n+'.jpg';img.alt='InnoServe Awards 活動主視覺';img.width=1721;img.height=1244;return img;});
+ frame.append(pictures[0]);
+ Promise.all(pictures.map(img=>img.decode())).then(()=>{
+   if(version!==waitVersion||!frame.isConnected)return;
+   let index=0;
+   loadingSlideTimer=setInterval(()=>{
+     if(version!==waitVersion||!frame.isConnected){clearInterval(loadingSlideTimer);loadingSlideTimer=null;return;}
+     index=(index+1)%pictures.length;frame.replaceChildren(pictures[index]);
+   },1000);
+ }).catch(()=>{/* Keep the first image if another slide cannot be loaded. */});
+}
