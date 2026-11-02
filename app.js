@@ -1,18 +1,18 @@
 const cfg=window.LASER_CONFIG, API=cfg.apiBase.replace(/\/$/,'');
 const screen=document.getElementById('screen'),message=document.getElementById('message');
 document.getElementById('title').textContent=cfg.title;
-let entryMode="camera";
+let entryMode='camera',guestToken=localStorage.getItem('laser-guest-token')||'',guestCode=localStorage.getItem('laser-guest-code')||'',previewURL=null,colorTimer=null;
 let stream=null,photo=null,taskId=localStorage.getItem('laser-active-task'),poll=null,returnTimer=null,busy=false,requestId=crypto.randomUUID();
 function msg(text,error=false){message.textContent=text;message.className=error?'error':'';}
 let captureTimer=null,captureOverlay=null;
 function stopCamera(){clearTimeout(captureTimer);captureTimer=null;captureOverlay?.remove();captureOverlay=null;stream?.getTracks().forEach(t=>t.stop());stream=null;}
-async function api(path,body){const r=await fetch(API+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok||!d.success)throw Error(d.error||'連線失敗');return d;}
+async function api(path,body){const r=await fetch(API+path,{method:body?'POST':'GET',headers:{'X-Guest-Token':guestToken,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok||!d.success)throw Error(d.error||'連線失敗');return d;}
 function button(text,fn,primary=false){const b=document.createElement('button');b.textContent=text;b.className=primary?'primary':'';b.onclick=fn;return b;}
 function actions(...buttons){const e=document.createElement('div');e.className='actions';e.append(...buttons);screen.append(e);}
 let loadingSlideTimer=null;
 let waitVersion=0,progressTimer=null,progressValue=5,progressPhase='queued';
-function heading(text){clearInterval(loadingSlideTimer);loadingSlideTimer=null;clearInterval(progressTimer);progressTimer=null;waitVersion++;screen.replaceChildren();const h=document.createElement('h2');h.textContent=text;screen.append(h);msg('');}
-function home(){clearTimeout(poll);clearInterval(returnTimer);stopCamera();taskId=null;photo=null;busy=false;localStorage.removeItem('laser-active-task');requestId=crypto.randomUUID();heading('一張照片，一份專屬線稿');screen.insertAdjacentHTML('beforeend','<div class="examples"><figure><img src="https://img.shoplineapp.com/media/image_clips/6a1ef28ef1bda7070f35eecc/original.png?1780413070=&owner_id=66221c5c384dbb002ec45c18" alt="AI角色示意"><figcaption>AI 專屬角色</figcaption></figure><span>→</span><figure><img src="https://img.shoplineapp.com/media/image_clips/6a1ef3c33ce472c30e346dac/original.png?1780413379=&owner_id=66221c5c384dbb002ec45c18" alt="禮品示意"><figcaption>專屬客製禮品</figcaption></figure></div><p>本攤位生成黑白雷雕線稿，圖片為示意。</p>');actions(button('開始體驗',chooseEntry,true));}
+function heading(text){clearTimeout(colorTimer);colorTimer=null;clearInterval(loadingSlideTimer);loadingSlideTimer=null;clearInterval(progressTimer);progressTimer=null;waitVersion++;screen.replaceChildren();const h=document.createElement('h2');h.textContent=text;screen.append(h);msg('');}
+function home(){clearTimeout(poll);clearInterval(returnTimer);stopCamera();taskId=null;photo=null;busy=false;guestToken='';guestCode='';localStorage.removeItem('laser-active-task');localStorage.removeItem('laser-guest-token');localStorage.removeItem('laser-guest-code');if(previewURL)URL.revokeObjectURL(previewURL);previewURL=null;requestId=crypto.randomUUID();heading('請輸入活動代碼');const form=document.createElement('form');form.className='code-entry';const label=document.createElement('label');label.textContent='活動代碼';const input=document.createElement('input');input.required=true;input.maxLength=64;input.autocomplete='off';input.placeholder='請輸入您的代碼';label.append(input);const go=button('驗證代碼',()=>{},true);go.type='submit';form.append(label,go);form.onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;go.disabled=true;try{const d=await api('/api/access',{code:input.value});guestToken=d.token;guestCode=d.code;taskId=d.taskId;localStorage.setItem('laser-guest-token',guestToken);localStorage.setItem('laser-guest-code',guestCode);if(taskId){localStorage.setItem('laser-active-task',taskId);waiting();}else chooseEntry();}catch(e){msg(e.message,true);}finally{busy=false;go.disabled=false;}};screen.append(form);}
 async function camera(){entryMode='camera';heading('看向鏡頭，準備好就拍照');photoGuidance();const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;screen.append(video);try{stopCamera();stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:1280},facingMode:'user'},audio:false});video.srcObject=stream;await video.play();actions(button('拍照',(event)=>startCaptureCountdown(video,event.currentTarget),true),button('返回首頁',home));}catch(e){msg('無法開啟相機。請確認網址為 HTTPS，並允許相機權限。',true);actions(button('重新開啟',camera),button('返回首頁',home));}}
 function capture(video){if(!video.videoWidth)return;const c=document.createElement('canvas');c.width=c.height=1024;const n=Math.min(video.videoWidth,video.videoHeight);const ctx=c.getContext('2d');ctx.translate(c.width,0);ctx.scale(-1,1);ctx.drawImage(video,(video.videoWidth-n)/2,(video.videoHeight-n)/2,n,n,0,0,1024,1024);photo=c.toDataURL('image/jpeg',.82);for(let q=.72;photo.length>500000&&q>=.32;q-=.1)photo=c.toDataURL('image/jpeg',q);if(photo.length>500000){msg('照片細節過多，請改用簡單背景再拍照。',true);return;}stopCamera();previewPhoto();}
 
@@ -20,11 +20,11 @@ async function submit(){if(busy)return;busy=true;screen.querySelectorAll('button
 function waiting(){
  heading('專屬線稿製作中');
  showLoadingSlides();
- const n=document.createElement('div');n.className='number';n.textContent='#'+taskId;screen.append(n);
+ const n=document.createElement('div');n.className='number';n.textContent='';n.hidden=true;screen.append(n);
  const stage=document.createElement('p');stage.id='generation-stage';stage.textContent='照片已送出，正在查詢進度';screen.insertBefore(stage,n);
  const bar=document.createElement('div');bar.id='generation-progress';bar.className='generation-progress';bar.setAttribute('role','progressbar');bar.setAttribute('aria-label','預估生成進度');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');const label=document.createElement('div');label.className='generation-percent';label.innerHTML='<span>預估進度</span><strong id="generation-percent">5%</strong>';screen.append(label,bar);progressValue=5;progressPhase='queued';paintProgress(5);progressTimer=setInterval(()=>{if(progressPhase==='failed'||progressPhase==='offline')return;const cap=progressPhase==='queued'?15:95;paintProgress(Math.min(cap,progressValue+Math.max(.1,(cap-progressValue)*.035)));},1000);
  actions(button('返回首頁',()=>{
-   if(confirm('訂單 #'+taskId+' 尚未確認製作。返回首頁後，生圖仍會繼續，請先記下號碼並告知工作人員。確定返回？'))home();
+   if(confirm('返回首頁後仍會繼續生圖，稍後輸入相同代碼即可接續。確定返回？'))home();
  }));
  pollTask(taskId,waitVersion);
 }
@@ -33,16 +33,16 @@ async function pollTask(id=taskId,version=waitVersion){
  try{
    const d=await api('/api/status/'+encodeURIComponent(id));
    if(id!==taskId||version!==waitVersion)return;
-   if(d.status==='completed'&&d.resultImageB){
+   if(d.status==='completed'&&d.hasResultImageB){
      clearInterval(progressTimer);paintProgress(100);
      document.getElementById('generation-stage').textContent='線稿已完成';
-     poll=setTimeout(()=>{if(id!==taskId||version!==waitVersion)return;if(d.chosenDesign==='B')completed(d.resultImageB);else review(d.resultImageB);},450);return;
+     if(d.chosenDesign==='B'){completed(d.cupColorName);return;}const r=await fetch(API+'/api/preview/'+encodeURIComponent(id),{headers:{'X-Guest-Token':guestToken}});if(!r.ok)throw Error('預覽載入失敗');const blob=await r.blob();if(id!==taskId||version!==waitVersion)return;if(previewURL)URL.revokeObjectURL(previewURL);previewURL=URL.createObjectURL(blob);review(previewURL);return;
    }
    const stage=document.getElementById('generation-stage');
    const bar=document.getElementById('generation-progress');
    if(d.status==='failed'){
      progressPhase='failed';stage.textContent='生成未完成，請工作人員協助重試';bar.classList.add('is-failed');bar.setAttribute('aria-label','生成未完成');
-     msg('請告知工作人員訂單號碼 #'+id+'，後台可重試。',true);
+     msg('請告知工作人員您的活動代碼 '+guestCode+'，後台可重試。',true);
    }else{
      progressPhase=d.status==='queued'||d.status==='pending'?'queued':'generating';bar.classList.remove('is-failed');bar.setAttribute('aria-label','預估生成進度');
      stage.textContent=d.status==='queued'||d.status==='pending'?'照片已送出 → 排隊等待中':'照片已送出 → AI 正在生成線稿';
@@ -54,9 +54,11 @@ async function pollTask(id=taskId,version=waitVersion){
  }
  if(id===taskId&&version===waitVersion)poll=setTimeout(()=>pollTask(id,version),3000);
 }
-function review(src){heading('你的專屬線稿完成了');const img=new Image();img.src=src;img.className='portrait';screen.append(img);const n=document.createElement('p');n.textContent='號碼 #'+taskId+'｜確認後交由工作人員製作';screen.append(n);actions(button('確認製作',async()=>{if(busy)return;busy=true;screen.querySelectorAll('button').forEach(b=>b.disabled=true);msg('正在確認送單…');try{await api('/api/choice/'+encodeURIComponent(taskId),{choice:'B'});completed(src);}catch(e){msg(e.message+'；可再按確認，不會重複建立訂單。',true);screen.querySelectorAll('button').forEach(b=>b.disabled=false);}finally{busy=false;}},true),button('取消（回首頁）',()=>{if(busy)return;if(confirm('確定取消本次製作並返回首頁？此圖片不會確認送製，已生成的紀錄仍會保留。'))home();}));}
-function completed(src){heading('已送出製作');const img=new Image();img.className='portrait';img.style.maxWidth='300px';img.src=src;screen.append(img);const n=document.createElement('div');n.className='number';n.textContent='#'+taskId;screen.append(n);const p=document.createElement('p');p.textContent='請記下此號碼，向工作人員確認製作及領取。';screen.append(p);const url=API+'/download.html?taskId='+encodeURIComponent(taskId);const qr=document.createElement('canvas');qr.id='qr';screen.append(qr);if(window.QRious)new QRious({element:qr,value:url,size:300,level:'M'});else{const a=document.createElement('a');a.href=url;a.textContent='開啟線稿下載頁';screen.append(a);}let left=cfg.returnSeconds||20;const label=document.createElement('p');screen.append(label);actions(button('返回首頁',home));returnTimer=setInterval(()=>{label.textContent=left+' 秒後返回首頁';if(left--<=0)home();},1000);}
-if(API.includes('YOUR-LASER')){heading('尚未完成系統設定');msg('請先在 config.js 填入獨立雷雕後端網址。',true);}else{heading('正在連接雷雕系統');api('/api/config').then(d=>{if(d.product!=='laser-single-b')throw Error('此網址不是獨立雷雕後端，已停止送單。');if(taskId)waiting();else home();}).catch(e=>msg(e.message,true));}
+function review(src){heading('確認您的專屬線稿');const img=new Image();img.src=src;img.className='portrait';screen.append(img);actions(button('確認圖片，選擇杯色',()=>chooseColor(src),true),button('取消（回首頁）',()=>{if(confirm('返回首頁？稍後輸入相同代碼可接續此圖片。'))home();}));}
+async function chooseColor(src){heading('選擇杯款顏色');const version=waitVersion;const img=new Image();img.src=src;img.className='portrait';img.style.maxWidth='220px';screen.append(img);const hint=document.createElement('p');hint.textContent='選擇顏色後按確認；以送單成功時的庫存為準。';const grid=document.createElement('div');grid.className='color-grid';screen.append(hint,grid);let selected=null;const go=button('確認杯色並完成',async()=>{if(busy||!selected)return;busy=true;go.disabled=true;try{const d=await api('/api/finalize',{taskId,colorId:selected});completed(d.colorName);}catch(e){msg(e.message,true);selected=null;await refresh();}finally{busy=false;go.disabled=!selected;}},true);go.disabled=true;actions(go,button('返回看圖',()=>{if(!busy)review(src);}),button('返回首頁',()=>{if(!busy&&confirm('返回首頁？相同代碼可接續此訂單。'))home();}));async function refresh(){clearTimeout(colorTimer);try{const d=await api('/api/colors');if(version!==waitVersion)return;grid.replaceChildren();if(!d.colors.length){const p=document.createElement('p');p.textContent='目前尚無可選杯色，請洽工作人員。';grid.append(p);}if(!d.colors.some(c=>c.id===selected&&c.stock>0))selected=null;for(const c of d.colors){const b=button('',()=>{if(busy)return;selected=c.id;drawSelection();});b.dataset.colorId=c.id;b.disabled=c.stock<1;const sw=document.createElement('span');sw.className='swatch';sw.style.background=c.swatch;const label=document.createElement('span');label.textContent=c.name+(c.stock>0?'｜剩餘 '+c.stock:'｜已選完');b.append(sw,label);grid.append(b);}drawSelection();}catch(e){if(version===waitVersion)msg(e.message,true);}finally{if(version===waitVersion)colorTimer=setTimeout(refresh,5000);}}function drawSelection(){for(const b of grid.children)if(b.dataset.colorId)b.setAttribute('aria-pressed',String(b.dataset.colorId===selected));go.disabled=busy||!selected;}await refresh();}
+function completed(colorName){heading('已完成！');const p=document.createElement('p');p.textContent='您的杯款顏色：'+(colorName||'已選定');const hint=document.createElement('p');hint.textContent='請以您的活動代碼向工作人員確認領取。';screen.append(p,hint);actions(button('返回首頁',home));let left=cfg.returnSeconds||20;const label=document.createElement('p');screen.append(label);label.textContent=left+' 秒後返回首頁';returnTimer=setInterval(()=>{left--;label.textContent=left+' 秒後返回首頁';if(left<=0)home();},1000);}
+
+if(API.includes('YOUR-LASER')){heading('尚未完成系統設定');msg('請先在 config.js 填入獨立雷雕後端網址。',true);}else{heading('正在連接雷雕系統');api('/api/config').then(d=>{if(d.product!=='laser-single-b')throw Error('此網址不是獨立雷雕後端，已停止送單。');if(d.flowVersion!==2)throw Error('系統更新中，請稍候重新整理');if(taskId&&guestToken)waiting();else home();}).catch(e=>msg(e.message,true));}
 
 function chooseEntry(){stopCamera();heading('選擇照片來源');photoGuidance();actions(button('現場拍照',camera,true),button('上傳照片',uploadPhoto,true),button('返回首頁',home));}
 function previewPhoto(){heading('使用這張照片製作線稿？');const img=new Image();img.src=photo;img.className='portrait';screen.append(img);actions(button('開始生成',submit,true),button(entryMode==='upload'?'更換照片':'重新拍照',entryMode==='upload'?uploadPhoto:camera),button('重新選擇來源',chooseEntry));}
@@ -102,3 +104,4 @@ function showLoadingSlides(){
    },1000);
  }).catch(()=>{/* Keep the first image if another slide cannot be loaded. */});
 }
+
