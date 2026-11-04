@@ -34,6 +34,12 @@ Object.assign(translations,{
  '照片已送出 → AI 正在生成 A、B 兩款線稿':'Photo received → Creating Styles A and B',
  '請拍攝正面、臉部清晰的單人照片，避免多人合照，以免無法正確生成線稿。':'Take a clear, front-facing photo of one person. Avoid group photos.'
 });
+Object.assign(translations,{
+ '重新上傳照片':'Upload Another Photo',
+ '返回選擇來源':'Back to Photo Sources',
+ '此體驗已失效':'This Session Has Ended',
+ '請上傳正面、臉部清晰的單人照片，避免多人合照，以免無法正確生成線稿。':'Upload a clear, front-facing photo of one person. Avoid group photos.'
+});
 let language=localStorage.getItem('laser-language')||'zh';const originals=new WeakMap();
 function translatePage(){observer.disconnect();const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){if(['SCRIPT','STYLE'].includes(node.parentElement?.tagName))continue;const current=node.textContent;let item=originals.get(node);if(!item||current!==item.last)item={original:current,last:current};let text=item.original;if(language==='en'){text=translations[text]||text;text=text.replace(/^(\d+) 秒後返回首頁$/,'Returning home in $1 seconds').replace(/^號碼 #(.*?)｜確認後交由工作人員製作$/,'Number #$1 | Confirm to send to our staff');}node.textContent=text;item.last=text;originals.set(node,item);}document.documentElement.lang=language==='en'?'en':'zh-Hant';document.querySelectorAll('[data-language]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.language===language));observer.observe(document.body,{childList:true,subtree:true,characterData:true});}
 const observer=new MutationObserver(translatePage);document.querySelectorAll('[data-language]').forEach(b=>b.onclick=()=>{language=b.dataset.language;localStorage.setItem('laser-language',language);translatePage();});translatePage();

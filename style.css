@@ -61,3 +61,5 @@ button.start-experience{width:min(100%,420px);min-height:88px;font-family:'Noto 
 .settings-card label.entry-option{display:flex;align-items:center;gap:10px}.entry-option input{width:22px;height:22px}
 .order-designs{display:flex;flex-direction:column;gap:10px}.order-designs figure{margin:0}.order-designs figcaption{font-size:13px;text-align:center}
 @media(max-width:480px){.design-grid{gap:8px}.design-choice{padding:6px;border-radius:14px}.design-choice strong{font-size:18px}}
+
+.reset-section{margin-top:24px;padding-top:20px;border-top:1px solid #d5dbd9}.danger-button{color:#9b2020;border-color:#9b2020;background:#fff}.danger-button:hover{background:#fff1ef}.danger-button:disabled{opacity:.5}#codes-reset-status,#orders-reset-status{color:#9b2020}#entry-form{align-items:center;gap:24px}
