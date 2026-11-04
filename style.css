@@ -50,3 +50,14 @@ header h1#title{font-family:'Noto Sans TC','Noto Sans JP',sans-serif;font-weight
 #screen.landing .actions{margin-top:0}
 button.start-experience{width:min(100%,420px);min-height:88px;font-family:'Noto Sans TC',sans-serif;font-size:clamp(26px,4vw,36px);font-weight:900;border-radius:20px}
 #privacy-notice p{color:inherit;margin:8px 0}#privacy-notice a{color:inherit}#privacy-notice[hidden]{display:none}
+
+
+/* Two independent, full-image choices; a visible selection is required to confirm. */
+.design-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:24px 0}
+.design-choice{display:flex;flex-direction:column;align-items:center;gap:12px;min-width:0;padding:12px;border:3px solid #d8dfdf;border-radius:20px;background:#fff;color:#133139}
+.design-choice img{width:100%;height:auto;aspect-ratio:1;object-fit:contain;border-radius:12px}
+.design-choice strong{font-size:22px}.design-choice[aria-pressed=true]{border-color:#bd9300;background:#fff7cd;box-shadow:0 0 0 3px #f5da69}
+.design-choice:focus-visible{outline:3px solid #133139;outline-offset:4px}.design-grid:has(>.design-choice:only-child){grid-template-columns:minmax(0,480px);justify-content:center}
+.settings-card label.entry-option{display:flex;align-items:center;gap:10px}.entry-option input{width:22px;height:22px}
+.order-designs{display:flex;flex-direction:column;gap:10px}.order-designs figure{margin:0}.order-designs figcaption{font-size:13px;text-align:center}
+@media(max-width:480px){.design-grid{gap:8px}.design-choice{padding:6px;border-radius:14px}.design-choice strong{font-size:18px}}

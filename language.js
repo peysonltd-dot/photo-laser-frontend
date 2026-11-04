@@ -26,9 +26,18 @@ Object.assign(translations,{
  "經您另行同意，沛森得將 AI 圖像印製於禮品上的成品照片，用於官方網站的活動案例展示，不設定固定展示期限。此類展示照片不適用前述 7 天刪除期限；您可聯絡沛森申請停止使用及撤下，不影響活動體驗資格。":"With your separate consent, photos of finished gifts may be displayed as event examples on our official website without a fixed end date. The 7-day deletion period does not apply to these display photos. You may request removal without affecting participation.",
  "如需查詢、閱覽、申請停止蒐集、處理、利用及刪除，請聯絡沛森顧問有限公司：":"For access, cessation of collection, processing or use, or deletion, contact Peyson Ltd.: "
 });
+Object.assign(translations,{
+ '選擇您喜歡的線稿':'Choose Your Favorite Portrait',
+ '請點選 A 款或 B 款，再按「確認圖片」。':'Select Style A or B, then confirm your image.',
+ '請確認圖片後送出。':'Review your portrait and confirm.',
+ 'A 款':'Style A','B 款':'Style B',
+ '照片已送出 → AI 正在生成 A、B 兩款線稿':'Photo received → Creating Styles A and B',
+ '請拍攝正面、臉部清晰的單人照片，避免多人合照，以免無法正確生成線稿。':'Take a clear, front-facing photo of one person. Avoid group photos.'
+});
 let language=localStorage.getItem('laser-language')||'zh';const originals=new WeakMap();
 function translatePage(){observer.disconnect();const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){if(['SCRIPT','STYLE'].includes(node.parentElement?.tagName))continue;const current=node.textContent;let item=originals.get(node);if(!item||current!==item.last)item={original:current,last:current};let text=item.original;if(language==='en'){text=translations[text]||text;text=text.replace(/^(\d+) 秒後返回首頁$/,'Returning home in $1 seconds').replace(/^號碼 #(.*?)｜確認後交由工作人員製作$/,'Number #$1 | Confirm to send to our staff');}node.textContent=text;item.last=text;originals.set(node,item);}document.documentElement.lang=language==='en'?'en':'zh-Hant';document.querySelectorAll('[data-language]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.language===language));observer.observe(document.body,{childList:true,subtree:true,characterData:true});}
 const observer=new MutationObserver(translatePage);document.querySelectorAll('[data-language]').forEach(b=>b.onclick=()=>{language=b.dataset.language;localStorage.setItem('laser-language',language);translatePage();});translatePage();
+
 
 
 
