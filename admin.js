@@ -13,6 +13,7 @@ function render(){if(editing)return;const signature=JSON.stringify([tasks.slice(
  for(const design of (t.chosenDesign?[t.chosenDesign]:['A','B'])){if(!t['hasResultImage'+design])continue;const figure=document.createElement('figure');const img=new Image();img.alt=design+' 款人物線稿';img.loading='lazy';img.dataset.taskId=t.id;img.dataset.design=design;img.dataset.revision=rowRevision;const label=document.createElement('figcaption');label.textContent=design+' 款';figure.append(img,label);previews.append(figure);thumbnailObserver.observe(img);}
  const ops=document.createElement('div');ops.className='operations';const act=document.createElement('div');act.className='actions';
  if(['A','B'].includes(t.chosenDesign)&&t['hasResultImage'+t.chosenDesign])act.append(btn('下載雷雕 PNG（'+t.chosenDesign+' 款）',()=>download(t.id,t.chosenDesign,rowRevision)));
+ if(t.hasSourceImage)act.append(btn('下載原始照片',()=>downloadSource(t.id,rowRevision)));
  if(t.status==='failed')act.append(btn('重試生成',async()=>{if(confirm('重試會使用 AI 額度，確定？')){await api('/api/admin/retry/'+t.id,{},rowRevision);await load();}}));
  const select=document.createElement('select');for(const v of ['待確認','製作中','已完成','已取消']){const o=document.createElement('option');o.value=o.textContent=v;select.append(o);}select.value=t.processStatus||'製作中';select.onfocus=()=>editing=true;select.onblur=()=>editing=false;select.onchange=async()=>{try{await api('/api/admin/update-meta/'+t.id,{processStatus:select.value},rowRevision);t.processStatus=select.value;}catch(e){$('status').textContent=e.message;}};
  const remark=document.createElement('input');remark.placeholder='備註';remark.value=t.remark||'';remark.onfocus=()=>editing=true;remark.onblur=()=>editing=false;remark.onchange=async()=>{try{await api('/api/admin/update-meta/'+t.id,{remark:remark.value},rowRevision);t.remark=remark.value;}catch(e){$('status').textContent=e.message;}};
@@ -46,3 +47,25 @@ function staffColors(task,revision){
  return group;
 }
 
+
+async function downloadSource(id,revision=orderRevision){
+ const jobId='source:'+id;if(jobs.has(jobId))return;
+ const controller=new AbortController();jobs.set(jobId,controller);
+ const row=document.createElement('p');row.textContent='#'+id+' 原始照片下載中… ';
+ row.append(btn('取消等待',()=>controller.abort()));$('downloads').append(row);
+ try{
+  const r=await fetch(API+'/api/admin/task-source-image/'+encodeURIComponent(id),{signal:controller.signal,headers:{Authorization:'Bearer '+key,'X-Laser-Order-Revision':revision},cache:'no-store'});
+  if(!r.ok)throw Error('下載失敗，請重新登入或重新整理後重試');
+  const data=await r.json();if(revision!==orderRevision)throw Error('訂單已重置，請重新整理');
+  const match=/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(data.sourceImage||'');
+  if(!match)throw Error('此訂單沒有可下載的原始照片');
+  const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));
+  const blob=new Blob([bytes],{type:'image/'+match[1]});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='雷雕_'+id+'_原始照片.'+(match[1]==='jpeg'?'jpg':match[1]);a.textContent='#'+id+' 儲存原始照片';
+  row.replaceChildren(a);files.push({url,row});
+  while(files.length>10){const old=files.shift();URL.revokeObjectURL(old.url);old.row.remove();}
+  a.click();
+ }catch(e){row.textContent='#'+id+' '+(e.name==='AbortError'?'已取消，可重試':e.message);}
+ finally{jobs.delete(jobId);}
+}
