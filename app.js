@@ -2,6 +2,9 @@ const cfg=window.LASER_CONFIG, API=cfg.apiBase.replace(/\/$/,'');
 const screen=document.getElementById('screen'),message=document.getElementById('message');
 document.getElementById('title').textContent=cfg.title;
 let entryMode='camera',guestToken=localStorage.getItem('laser-guest-token')||'',guestCode=localStorage.getItem('laser-guest-code')||'',previewURL=null,colorTimer=null;
+let replacementTaskId=null,mobileSession=null,mobilePoll=null;
+const deviceMode=new URLSearchParams(location.search).get('mode')||cfg.deviceMode||'auto';
+const kioskMode=deviceMode==='kiosk'||(deviceMode==='auto'&&!/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)&&matchMedia('(min-width:900px)').matches);
 let stream=null,photo=null,taskId=localStorage.getItem('laser-active-task'),poll=null,returnTimer=null,busy=false,requestId=crypto.randomUUID();
 function msg(text,error=false){message.textContent=text;message.className=error?'error':'';}
 let captureTimer=null,captureOverlay=null;
@@ -11,14 +14,16 @@ function button(text,fn,primary=false){const b=document.createElement('button');
 function actions(...buttons){const e=document.createElement('div');e.className='actions';e.append(...buttons);screen.append(e);}
 let loadingSlideTimer=null;
 let waitVersion=0,progressTimer=null,progressValue=5,progressPhase='queued';
-function heading(text){clearTimeout(colorTimer);colorTimer=null;clearInterval(loadingSlideTimer);loadingSlideTimer=null;clearInterval(progressTimer);progressTimer=null;waitVersion++;screen.replaceChildren();const h=document.createElement('h2');h.textContent=text;screen.append(h);msg('');}
-function home(){clearTimeout(poll);clearInterval(returnTimer);stopCamera();taskId=null;photo=null;busy=false;guestToken='';guestCode='';localStorage.removeItem('laser-active-task');localStorage.removeItem('laser-guest-token');localStorage.removeItem('laser-guest-code');if(previewURL)URL.revokeObjectURL(previewURL);previewURL=null;requestId=crypto.randomUUID();heading('請輸入活動代碼');const form=document.createElement('form');form.className='code-entry';const label=document.createElement('label');const input=document.createElement('input');input.setAttribute('aria-label','活動代碼');input.required=true;input.maxLength=64;input.autocomplete='off';input.placeholder='請輸入您的代碼';label.append(input);const go=button('驗證代碼',()=>{},true);go.type='submit';form.append(label,go);form.onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;go.disabled=true;try{const d=await api('/api/access',{code:input.value});guestToken=d.token;guestCode=d.code;taskId=d.taskId;localStorage.setItem('laser-guest-token',guestToken);localStorage.setItem('laser-guest-code',guestCode);if(taskId){localStorage.setItem('laser-active-task',taskId);waiting();}else chooseEntry();}catch(e){msg(e.message,true);}finally{busy=false;go.disabled=false;}};screen.append(form);}
-async function camera(){entryMode='camera';heading('看向鏡頭，準備好就拍照');photoGuidance();const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;screen.append(video);try{stopCamera();stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:1280},facingMode:'user'},audio:false});video.srcObject=stream;await video.play();actions(button('拍照',(event)=>startCaptureCountdown(video,event.currentTarget),true),button('返回首頁',home));}catch(e){msg('無法開啟相機。請確認網址為 HTTPS，並允許相機權限。',true);actions(button('重新開啟',camera),button('返回首頁',home));}}
-function capture(video){if(!video.videoWidth)return;const c=document.createElement('canvas');c.width=c.height=1024;const n=Math.min(video.videoWidth,video.videoHeight);const ctx=c.getContext('2d');ctx.translate(c.width,0);ctx.scale(-1,1);ctx.drawImage(video,(video.videoWidth-n)/2,(video.videoHeight-n)/2,n,n,0,0,1024,1024);photo=c.toDataURL('image/jpeg',.82);for(let q=.72;photo.length>500000&&q>=.32;q-=.1)photo=c.toDataURL('image/jpeg',q);if(photo.length>500000){msg('照片細節過多，請改用簡單背景再拍照。',true);return;}stopCamera();previewPhoto();}
+function cancelMobileSession(id,token){return fetch(API+'/api/mobile-upload-sessions/'+encodeURIComponent(id)+'/cancel',{method:'POST',headers:{'X-Guest-Token':token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});}
+function clearMobileSession(){clearTimeout(mobilePoll);mobilePoll=null;if(mobileSession){const old=mobileSession;mobileSession=null;cancelMobileSession(old.id,old.token);}}
+function heading(text){clearMobileSession();clearTimeout(colorTimer);colorTimer=null;clearInterval(loadingSlideTimer);loadingSlideTimer=null;clearInterval(progressTimer);progressTimer=null;waitVersion++;screen.replaceChildren();const h=document.createElement('h2');h.textContent=text;screen.append(h);msg('');}
+function home(){clearTimeout(poll);clearInterval(returnTimer);stopCamera();clearMobileSession();replacementTaskId=null;taskId=null;photo=null;busy=false;guestToken='';guestCode='';localStorage.removeItem('laser-active-task');localStorage.removeItem('laser-guest-token');localStorage.removeItem('laser-guest-code');if(previewURL)URL.revokeObjectURL(previewURL);previewURL=null;requestId=crypto.randomUUID();heading('請輸入活動代碼');const form=document.createElement('form');form.className='code-entry';const label=document.createElement('label');const input=document.createElement('input');input.setAttribute('aria-label','活動代碼');input.required=true;input.maxLength=64;input.autocomplete='off';input.placeholder='請輸入您的代碼';label.append(input);const go=button('驗證代碼',()=>{},true);go.type='submit';form.append(label,go);form.onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;go.disabled=true;try{const d=await api('/api/access',{code:input.value});guestToken=d.token;guestCode=d.code;taskId=d.taskId;localStorage.setItem('laser-guest-token',guestToken);localStorage.setItem('laser-guest-code',guestCode);if(taskId){localStorage.setItem('laser-active-task',taskId);waiting();}else chooseEntry();}catch(e){msg(e.message,true);}finally{busy=false;go.disabled=false;}};screen.append(form);}
+async function camera(){entryMode='camera';heading('看向鏡頭，準備好就拍照');const version=waitVersion;photoGuidance();const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;screen.append(video);try{stopCamera();const opened=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:1280},facingMode:'user'},audio:false});if(version!==waitVersion){opened.getTracks().forEach(t=>t.stop());return;}stream=opened;video.srcObject=stream;await video.play();if(version!==waitVersion)return;actions(button('拍照',(event)=>startCaptureCountdown(video,event.currentTarget),true),button('改用上傳照片',uploadPhoto),button('返回首頁',home));}catch(e){if(version!==waitVersion)return;msg('無法開啟相機。請確認網址為 HTTPS，並允許相機權限。',true);actions(button('重新開啟',camera),button('改用上傳照片',uploadPhoto),button('返回首頁',home));}}
+function capture(video){if(!video.videoWidth)return;const c=document.createElement('canvas');c.width=c.height=1024;const n=Math.min(video.videoWidth,video.videoHeight);const ctx=c.getContext('2d');ctx.translate(c.width,0);ctx.scale(-1,1);ctx.drawImage(video,(video.videoWidth-n)/2,(video.videoHeight-n)/2,n,n,0,0,1024,1024);photo=c.toDataURL('image/jpeg',.82);for(let q=.72;photo.length>500000&&q>=.32;q-=.1)photo=c.toDataURL('image/jpeg',q);if(photo.length>500000){msg('照片細節過多，請改用簡單背景再拍照。',true);return;}stopCamera();requestId=crypto.randomUUID();previewPhoto();}
 
-async function submit(){if(busy)return;busy=true;screen.querySelectorAll('button').forEach(b=>b.disabled=true);msg('照片傳送中，請稍候…');try{const d=await api('/api/upload',{image:photo,requestId,entryMode});taskId=d.taskId;localStorage.setItem('laser-active-task',taskId);photo=null;waiting();}catch(e){msg('送出未確認，請確認網路後按「開始生成」重試。'+e.message,true);screen.querySelectorAll('button').forEach(b=>b.disabled=false);}finally{busy=false;}}
+async function submit(){if(busy)return;busy=true;screen.querySelectorAll('button').forEach(b=>b.disabled=true);msg('照片傳送中，請稍候…');try{const d=await api('/api/upload',{image:photo,requestId,entryMode,replaceTaskId:replacementTaskId});taskId=d.taskId;replacementTaskId=null;localStorage.setItem('laser-active-task',taskId);photo=null;waiting();}catch(e){msg('送出未確認，請確認網路後按「開始生成」重試。'+e.message,true);screen.querySelectorAll('button').forEach(b=>b.disabled=false);}finally{busy=false;}}
 function waiting(){
- heading('專屬線稿製作中');
+ heading('AI人像照片生成中');
  showLoadingSlides();
  const n=document.createElement('div');n.className='number';n.textContent='';n.hidden=true;screen.append(n);
  const stage=document.createElement('p');stage.id='generation-stage';stage.textContent='照片已送出，正在查詢進度';screen.insertBefore(stage,n);
@@ -36,7 +41,7 @@ async function pollTask(id=taskId,version=waitVersion){
    if(d.status==='completed'&&d.hasResultImageB){
      clearInterval(progressTimer);paintProgress(100);
      document.getElementById('generation-stage').textContent='線稿已完成';
-     if(d.chosenDesign==='B'){completed(d.cupColorName);return;}const r=await fetch(API+'/api/preview/'+encodeURIComponent(id),{headers:{'X-Guest-Token':guestToken}});if(!r.ok)throw Error('預覽載入失敗');const blob=await r.blob();if(id!==taskId||version!==waitVersion)return;if(previewURL)URL.revokeObjectURL(previewURL);previewURL=URL.createObjectURL(blob);review(previewURL);return;
+     if(d.chosenDesign==='B'){completed(d.downloadToken);return;}const r=await fetch(API+'/api/preview/'+encodeURIComponent(id),{headers:{'X-Guest-Token':guestToken}});if(!r.ok)throw Error('預覽載入失敗');const blob=await r.blob();if(id!==taskId||version!==waitVersion)return;if(previewURL)URL.revokeObjectURL(previewURL);previewURL=URL.createObjectURL(blob);review(previewURL);return;
    }
    const stage=document.getElementById('generation-stage');
    const bar=document.getElementById('generation-progress');
@@ -54,15 +59,62 @@ async function pollTask(id=taskId,version=waitVersion){
  }
  if(id===taskId&&version===waitVersion)poll=setTimeout(()=>pollTask(id,version),3000);
 }
-function review(src){heading('確認您的專屬線稿');const img=new Image();img.src=src;img.className='portrait';screen.append(img);actions(button('確認圖片，選擇杯色',()=>chooseColor(src),true),button('取消（回首頁）',()=>{if(confirm('返回首頁？稍後輸入相同代碼可接續此圖片。'))home();}));}
-async function chooseColor(src){heading('選擇杯款顏色');const version=waitVersion;const img=new Image();img.src=src;img.className='portrait';img.style.maxWidth='220px';screen.append(img);const hint=document.createElement('p');hint.textContent='選擇顏色後按確認；以送單成功時的庫存為準。';const grid=document.createElement('div');grid.className='color-grid';screen.append(hint,grid);let selected=null;const go=button('確認杯色並完成',async()=>{if(busy||!selected)return;busy=true;go.disabled=true;try{const d=await api('/api/finalize',{taskId,colorId:selected});completed(d.colorName);}catch(e){msg(e.message,true);selected=null;await refresh();}finally{busy=false;go.disabled=!selected;}},true);go.disabled=true;actions(go,button('返回看圖',()=>{if(!busy)review(src);}),button('返回首頁',()=>{if(!busy&&confirm('返回首頁？相同代碼可接續此訂單。'))home();}));async function refresh(){clearTimeout(colorTimer);try{const d=await api('/api/colors');if(version!==waitVersion)return;grid.replaceChildren();if(!d.colors.length){const p=document.createElement('p');p.textContent='目前尚無可選杯色，請洽工作人員。';grid.append(p);}if(!d.colors.some(c=>c.id===selected&&c.stock>0))selected=null;for(const c of d.colors){const b=button('',()=>{if(busy)return;selected=c.id;drawSelection();});b.dataset.colorId=c.id;b.disabled=c.stock<1;const sw=document.createElement('span');sw.className='swatch';sw.style.background=c.swatch;const label=document.createElement('span');label.textContent=c.name+(c.stock>0?'':'｜已選完');if(['white','pink','black'].includes(c.image)){const cup=new Image();cup.src='assets/cups/'+c.image+'.webp';cup.alt=c.name+'木蓋保溫杯';cup.className='cup-photo';cup.width=480;cup.height=480;b.classList.add('cup-choice');b.append(cup);}b.append(sw,label);grid.append(b);}drawSelection();}catch(e){if(version===waitVersion)msg(e.message,true);}finally{if(version===waitVersion)colorTimer=setTimeout(refresh,5000);}}function drawSelection(){for(const b of grid.children)if(b.dataset.colorId)b.setAttribute('aria-pressed',String(b.dataset.colorId===selected));go.disabled=busy||!selected;}await refresh();}
-function completed(colorName){heading('已完成！');const p=document.createElement('p');p.textContent='您的杯款顏色：'+(colorName||'已選定');const hint=document.createElement('p');hint.textContent='請以您的活動代碼向工作人員確認領取。';screen.append(p,hint);actions(button('返回首頁',home));let left=cfg.returnSeconds||20;const label=document.createElement('p');screen.append(label);label.textContent=left+' 秒後返回首頁';returnTimer=setInterval(()=>{left--;label.textContent=left+' 秒後返回首頁';if(left<=0)home();},1000);}
+function review(src){
+ heading('確認您的專屬線稿');const img=new Image();img.src=src;img.className='portrait';img.alt='生成的人物線稿';screen.append(img);
+ const confirmButton=button('確認圖片',async()=>{
+  if(busy)return;busy=true;const buttons=[...screen.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);msg('正在確認送單…');
+  try{const d=await api('/api/finalize',{taskId});completed(d.downloadToken);}
+  catch(e){msg('尚未確認送單，請再按「確認圖片」重試。'+e.message,true);buttons.forEach(b=>b.disabled=false);}
+  finally{busy=false;}
+ },true);
+ const retake=button('重新拍照',()=>{if(busy||!confirm('要重新拍照並再次生成圖片嗎？'))return;replacementTaskId=taskId;requestId=crypto.randomUUID();camera();});
+ const back=button('返回首頁',()=>{if(!busy&&confirm('返回首頁？稍後輸入相同代碼可接續此圖片。'))home();});
+ actions(confirmButton,retake,back);screen.lastElementChild.classList.add('review-actions');
+}
+function completed(token){
+ clearInterval(returnTimer);heading('已完成');const title=screen.querySelector('h2');const note=document.createElement('span');note.className='screenshot-note';note.textContent='請截圖';title.append(document.createTextNode(' '),note);
+ const version=waitVersion,id=taskId;const layout=document.createElement('div');layout.className='completed-layout';
+ const img=new Image();img.alt='您的專屬人像';img.className='portrait';img.width=480;img.height=480;layout.append(img);
+ if(previewURL)img.src=previewURL;else fetch(API+'/api/preview/'+encodeURIComponent(id),{headers:{'X-Guest-Token':guestToken}}).then(async r=>{if(!r.ok)throw Error();const blob=await r.blob();if(version!==waitVersion)return;previewURL=URL.createObjectURL(blob);img.src=previewURL;}).catch(()=>{img.alt='預覽暫時無法載入，仍可使用下載連結';});
+ const panel=document.createElement('div');panel.className='download-panel';
+ if(token){const url=new URL(API+'/download.html');url.hash=new URLSearchParams({token}).toString();const canvas=document.createElement('canvas');canvas.className='download-qr';canvas.setAttribute('aria-label','掃描下載圖片 QR Code');panel.append(canvas);if(window.QRious)new QRious({element:canvas,value:url.href,size:360,level:'M',padding:16});const caption=document.createElement('p');caption.textContent='掃描下載您的圖片';const link=document.createElement('a');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';link.className='button';link.textContent='開啟圖片下載頁';panel.append(caption,link);}else{const p=document.createElement('p');p.textContent='下載連結已過期，請洽工作人員。';panel.append(p);}
+ layout.append(panel);screen.append(layout);actions(button('返回首頁',home));let left=cfg.returnSeconds||20;const label=document.createElement('p');screen.append(label);label.textContent=left+' 秒後返回首頁';returnTimer=setInterval(()=>{left--;label.textContent=left+' 秒後返回首頁';if(left<=0)home();},1000);
+}
 
-if(API.includes('YOUR-LASER')){heading('尚未完成系統設定');msg('請先在 config.js 填入獨立雷雕後端網址。',true);}else{heading('正在連接雷雕系統');api('/api/config').then(d=>{if(d.product!=='laser-single-b')throw Error('此網址不是獨立雷雕後端，已停止送單。');if(d.flowVersion!==2)throw Error('系統更新中，請稍候重新整理');if(taskId&&guestToken)waiting();else home();}).catch(e=>msg(e.message,true));}
+if(API.includes('YOUR-LASER')){heading('尚未完成系統設定');msg('請先在 config.js 填入獨立雷雕後端網址。',true);}else{heading('正在連接雷雕系統');api('/api/config').then(d=>{if(d.product!=='laser-single-b')throw Error('此網址不是獨立雷雕後端，已停止送單。');if(d.flowVersion!==3)throw Error('系統更新中，請稍候重新整理');if(taskId&&guestToken)waiting();else home();}).catch(e=>msg(e.message,true));}
 
 function chooseEntry(){stopCamera();heading('選擇照片來源');photoGuidance();actions(button('現場拍照',camera,true),button('上傳照片',uploadPhoto,true),button('返回首頁',home));}
 function previewPhoto(){heading('使用這張照片製作線稿？');const img=new Image();img.src=photo;img.className='portrait';screen.append(img);actions(button('開始生成',submit,true),button(entryMode==='upload'?'更換照片':'重新拍照',entryMode==='upload'?uploadPhoto:camera),button('重新選擇來源',chooseEntry));}
-function uploadPhoto(){stopCamera();entryMode='upload';heading('選擇一張清楚的單人照片');photoGuidance();const hint=document.createElement('p');hint.textContent='支援 JPG、PNG、WebP，最大 20 MB。';screen.append(hint);const input=document.createElement('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';input.onchange=async()=>{const file=input.files[0];if(!file)return;if(file.size>20*1024*1024){msg('照片超過 20 MB，請選擇較小的照片。',true);return;}const url=URL.createObjectURL(file);try{const img=new Image();img.src=url;await img.decode();const c=document.createElement('canvas');c.width=c.height=1024;const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,1024,1024);const ratio=Math.min(1024/img.width,1024/img.height);const w=img.width*ratio,h=img.height*ratio;ctx.drawImage(img,(1024-w)/2,(1024-h)/2,w,h);photo=c.toDataURL('image/jpeg',.82);for(let q=.72;photo.length>500000&&q>=.32;q-=.1)photo=c.toDataURL('image/jpeg',q);if(photo.length>500000)throw Error('照片過於複雜，請更換照片');requestId=crypto.randomUUID();previewPhoto();}catch(e){msg('無法讀取照片，請改用 JPG 或 PNG。'+e.message,true);}finally{URL.revokeObjectURL(url);}};screen.append(input);actions(button('返回',chooseEntry));}
+function uploadPhoto(){if(kioskMode)return uploadByQR();return localUpload();}
+function localUpload(){
+ stopCamera();entryMode='upload';heading('選擇一張清楚的單人照片');photoGuidance();const version=waitVersion;
+ const hint=document.createElement('p');hint.textContent='支援 JPG、PNG、WebP，最大 20 MB。';screen.append(hint);
+ const input=document.createElement('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';input.setAttribute('aria-label','選擇照片');
+ input.onchange=async()=>{const file=input.files[0];if(!file)return;input.disabled=true;msg('正在讀取照片…');try{const result=await prepareLaserPhoto(file);if(version!==waitVersion)return;photo=result;requestId=crypto.randomUUID();previewPhoto();}catch(e){if(version===waitVersion)msg(e.message,true);}finally{input.disabled=false;}};
+ screen.append(input);actions(button('返回',chooseEntry));
+}
+async function uploadByQR(){
+ stopCamera();entryMode='upload';heading('掃碼上傳手機照片');photoGuidance();const version=waitVersion,token=guestToken;
+ const content=document.createElement('div');content.className='mobile-upload';const status=document.createElement('p');status.textContent='正在準備上傳 QR Code…';content.append(status);screen.append(content);actions(button('返回',chooseEntry),button('返回首頁',home));
+ try{
+  const d=await api('/api/mobile-upload-sessions',{});
+  if(version!==waitVersion){cancelMobileSession(d.sessionId,token);return;}
+  mobileSession={id:d.sessionId,token};const url=new URL('upload.html',location.href);url.search='';url.hash=new URLSearchParams({session:d.sessionId,token:d.uploadToken}).toString();
+  const canvas=document.createElement('canvas');canvas.className='download-qr';canvas.setAttribute('aria-label','手機上傳照片 QR Code');content.prepend(canvas);new QRious({element:canvas,value:url.href,size:360,level:'M',padding:16});status.textContent='請用手機掃描，選擇照片並送出，再回到大螢幕確認。';
+  const expiry=document.createElement('p');expiry.textContent='此 QR Code 5 分鐘內有效，每次僅接收一張照片。';content.append(expiry);
+  const check=async()=>{
+   if(version!==waitVersion)return;
+   try{const state=await api('/api/mobile-upload-sessions/'+d.sessionId);if(version!==waitVersion)return;
+    if(state.status==='uploaded'&&state.sourceImage){photo=state.sourceImage;requestId=crypto.randomUUID();previewPhoto();return;}
+    if(state.status==='expired'||state.status==='cancelled'){expired();return;}
+    msg('');
+   }catch(e){if(version!==waitVersion)return;if(Date.now()>=d.expiresAt){expired();return;}msg('連線較慢，正在重新連線…');}
+   if(version===waitVersion)mobilePoll=setTimeout(check,2000);
+  };
+  function expired(){canvas.remove();status.textContent='QR Code 已失效，請重新產生。';expiry.remove();content.append(button('重新產生 QR Code',uploadByQR,true));clearMobileSession();}
+  check();
+ }catch(e){if(version===waitVersion){status.textContent=e.message;content.append(button('重新產生 QR Code',uploadByQR,true));}}
+}
 
 function startCaptureCountdown(video,trigger){
   if(captureOverlay||!video.videoWidth||video.readyState<2)return;
@@ -104,4 +156,5 @@ function showLoadingSlides(){
    },1000);
  }).catch(()=>{/* Keep the first image if another slide cannot be loaded. */});
 }
+
 
