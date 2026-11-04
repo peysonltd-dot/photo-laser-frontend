@@ -20,8 +20,15 @@ Object.assign(translations,{
  "線稿已完成":"Your portrait is ready",
  "照片已送出，正在查詢進度":"Photo received. Checking progress…"
 });
+Object.assign(translations,{
+ "照片原檔將於活動結束後 7 天內刪除；沛森不將影像用於 AI 訓練。":"Original photos will be deleted within 7 days after the event. Peyson does not use images for AI training.",
+ "沛森保管的照片原檔與 AI 生成影像，將於本次活動全部結束後 7 天內刪除，並可能提前刪除；刪除後將無法再次提供下載。":"Original photos and AI images held by Peyson will be deleted within 7 days after the entire event and may be deleted earlier. Downloads are unavailable after deletion.",
+ "經您另行同意，沛森得將 AI 圖像印製於禮品上的成品照片，用於官方網站的活動案例展示，不設定固定展示期限。此類展示照片不適用前述 7 天刪除期限；您可聯絡沛森申請停止使用及撤下，不影響活動體驗資格。":"With your separate consent, photos of finished gifts may be displayed as event examples on our official website without a fixed end date. The 7-day deletion period does not apply to these display photos. You may request removal without affecting participation.",
+ "如需查詢、閱覽、申請停止蒐集、處理、利用及刪除，請聯絡沛森顧問有限公司：":"For access, cessation of collection, processing or use, or deletion, contact Peyson Ltd.: "
+});
 let language=localStorage.getItem('laser-language')||'zh';const originals=new WeakMap();
 function translatePage(){observer.disconnect();const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){if(['SCRIPT','STYLE'].includes(node.parentElement?.tagName))continue;const current=node.textContent;let item=originals.get(node);if(!item||current!==item.last)item={original:current,last:current};let text=item.original;if(language==='en'){text=translations[text]||text;text=text.replace(/^(\d+) 秒後返回首頁$/,'Returning home in $1 seconds').replace(/^號碼 #(.*?)｜確認後交由工作人員製作$/,'Number #$1 | Confirm to send to our staff');}node.textContent=text;item.last=text;originals.set(node,item);}document.documentElement.lang=language==='en'?'en':'zh-Hant';document.querySelectorAll('[data-language]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.language===language));observer.observe(document.body,{childList:true,subtree:true,characterData:true});}
 const observer=new MutationObserver(translatePage);document.querySelectorAll('[data-language]').forEach(b=>b.onclick=()=>{language=b.dataset.language;localStorage.setItem('laser-language',language);translatePage();});translatePage();
+
 
 
