@@ -13,7 +13,7 @@ function render(){if(editing)return;const signature=JSON.stringify([tasks.slice(
  for(const design of (t.chosenDesign?[t.chosenDesign]:['A','B'])){if(!t['hasResultImage'+design])continue;const figure=document.createElement('figure');const img=new Image();img.alt=design+' 款人物線稿';img.loading='lazy';img.dataset.taskId=t.id;img.dataset.design=design;img.dataset.revision=rowRevision;const label=document.createElement('figcaption');label.textContent=design+' 款';figure.append(img,label);previews.append(figure);thumbnailObserver.observe(img);}
  const ops=document.createElement('div');ops.className='operations';const act=document.createElement('div');act.className='actions';
  if(['A','B'].includes(t.chosenDesign)&&t['hasResultImage'+t.chosenDesign]){
-  for(const fmt of ['svg','png'])act.append(btn('合成'+fmt.toUpperCase(),()=>download(t.id,t.chosenDesign,rowRevision,fmt)));
+  act.append(btn('合成PNG',()=>download(t.id,t.chosenDesign,rowRevision,'png')));
   act.append(btn('線稿',()=>download(t.id,t.chosenDesign,rowRevision)));}
  if(t.hasSourceImage)act.append(btn('原圖',()=>downloadSource(t.id,rowRevision)));
  if(t.status==='failed')act.append(btn('重試生成',async()=>{if(confirm('重試會使用 AI 額度，確定？')){await api('/api/admin/retry/'+t.id,{},rowRevision);await load();}}));
